@@ -9,7 +9,6 @@ using System.Threading.Tasks.Sources;
 /**
  * Save humans, destroy zombies!
  **/
-////////////////////////////////
 
 public class Point
 {
@@ -17,6 +16,7 @@ public class Point
     public int Y;
     public int cluster;
 }
+
 public class KMeans
 {
     public List<Point> points;
@@ -35,10 +35,6 @@ public class KMeans
         _rand = new Random(7524);
     }
 
-    int MyCMP(Point a, Point b)
-    {
-        return a.cluster - b.cluster;
-    }
 
     public void KMeans_Inital_RandomPartition()
     {
@@ -46,7 +42,7 @@ public class KMeans
         {
             points[i].cluster = i % clusterNumber;
         }
-        KMeans_Update();
+        Update();
     }
 
     public void KMeans_Inital_Forgy()
@@ -67,74 +63,59 @@ public class KMeans
         }
     }
 
-    int KMeans_GeneratePoints(int N)
-    {
-        int I, J, K;
-        for (I = 0; I < N & I < 1024; I++)
-        {
-            points[I].X = _rand.Next() % 1000;
-            points[I].Y = _rand.Next() % 1000;
-            points[I].cluster = int.MaxValue;
-        }
-        return I;
-    }
-
-    //#define EUCLID(X,Y) ((X)*(X))+((Y)*(Y))
-
     int EUCLID(int x, int y)
     {
         return ((x) * (x)) + ((y) * (y));
     }
 
-    int KMeans_Assign()
+    int Assign()
     {
-        int i, j;
-        int Min, Sum;
-
-        for (i = 0, Sum = 0; i < pointNumber; i++)
+        int sum = 0;
+        foreach (Point p in points)
         {
-            Min = int.MaxValue;
-            for (j = 0; j < clusterNumber; j++)
+            int min = int.MaxValue;
+            int j = 0;
+            foreach (Point cp in centroids)
             {
-                if (Min > EUCLID(points[i].X - centroids[j].X, points[i].Y - centroids[j].Y))
+                int tmp = EUCLID(p.X - cp.X, p.Y - cp.Y);
+                if (min > tmp)
                 {
-                    Min = EUCLID(points[i].X - centroids[j].X, points[i].Y - centroids[j].Y);
-                    points[i].cluster = j;
+                    min = tmp;
+                    p.cluster = j;
                 }
+                j += 1;
             }
-            Sum += Min;
+            sum += min;
         }
-
-        return Sum;
+        return sum;
     }
 
-    void KMeans_Update()
+    void Update()
     {
         centroids = points.GroupBy(p => p.cluster).Select(g => new Point() { X = (int)g.Average(a => a.X), Y = (int)g.Average(b => b.Y) }).ToList();
     }
 
     public IEnumerable<Point> getCentroids(int clusterNumber)
     {
-        this.clusterNumber = clusterNumber;
+        this.clusterNumber = Math.Min(clusterNumber, pointNumber);
         this.centroids = new List<Point>(this.clusterNumber);
         int Sum = int.MaxValue;
         int OldSum = int.MaxValue;
         KMeans_Inital_Forgy();
         while (true)
         {
-            Sum = KMeans_Assign();
+            Sum = Assign();
             if (Sum == OldSum)
             {
                 break;
             }
-            KMeans_Update();
+            Update();
             OldSum = Sum;
         }
         return centroids;
     }
 }
 
-////////////////////////////////
 public enum GameObjectType
 {
     ASH,
@@ -172,6 +153,22 @@ public class GameObject
 
     }
 
+    public GameObject GetClosestHuman(Board board)
+    {
+        List<GameObject> humans = board._gameObjects.Where(obj => obj.type != GameObjectType.ZOMBIE).ToList();
+        return humans.OrderBy(h => Math.Sqrt((h.X - this.X) * (h.X - this.X) + (h.Y - this.Y) * (h.Y - this.Y))).FirstOrDefault();
+    }
+
+    public GameObject GetClosestHumanNotAsh(Board board)
+    {
+        List<GameObject> humans = board._gameObjects.Where(obj => obj.type == GameObjectType.HUMAN).ToList();
+        return humans.OrderBy(h => Math.Sqrt((h.X - this.X) * (h.X - this.X) + (h.Y - this.Y) * (h.Y - this.Y))).FirstOrDefault();
+    }
+    public GameObject GetClosestZombie(Board board)
+    {
+        List<GameObject> humans = board._gameObjects.Where(obj => obj.type == GameObjectType.ZOMBIE).ToList();
+        return humans.OrderBy(h => Math.Sqrt((h.X - this.X) * (h.X - this.X) + (h.Y - this.Y) * (h.Y - this.Y))).FirstOrDefault();
+    }
 }
 
 public class Human : GameObject
@@ -200,9 +197,10 @@ public class Ash : Human
         var zs = zombies.Where(h => Math.Sqrt(((double)h.X - this.X) * ((double)h.X - this.X) + ((double)h.Y - this.Y) * ((double)h.Y - this.Y)) <= 2000.0);
         foreach (Zombie z in zs)
         {
-            Console.Error.WriteLine($"Z:{z.id} {z.X} {z.Y} ; Ash:{this.X} {this.Y}");
+            //Console.Error.WriteLine($"Z:{z.id} {z.X} {z.Y} ; Ash:{this.X} {this.Y}");
             z.isDead = true;
             killed++;
+            board._zombieCount -= 1;
         }
         board._gameObjects = board._gameObjects.Where(g => g.isDead == false).ToList();
         return killed;
@@ -213,11 +211,7 @@ public class Zombie : GameObject
 {
     public int nextX;
     public int nextY;
-    public GameObject GetClosestHuman(Board board)
-    {
-        List<GameObject> humans = board._gameObjects.Where(obj => obj.type != GameObjectType.ZOMBIE).ToList();
-        return humans.OrderBy(h => Math.Sqrt((h.X - this.X) * (h.X - this.X) + (h.Y - this.Y) * (h.Y - this.Y))).FirstOrDefault();
-    }
+
     public Zombie(int id, int x, int y, int nx, int ny)
     {
         this.id = 200 + id;
@@ -238,8 +232,10 @@ public class Zombie : GameObject
         {
             h.isDead = true;
             killed++;
+            board._humanCount -= 1;
         }
         board._gameObjects = board._gameObjects.Where(g => g.isDead == false).ToList();
+
         return killed;
     }
 
@@ -253,6 +249,30 @@ public class Board
     public int _zombieCount;
     public List<GameObject> _gameObjects;
     public int score = 0;
+
+    public Board DeepCopy()
+    {
+        List<GameObject> tmp = new List<GameObject>();
+
+        foreach (GameObject g in _gameObjects)
+        {
+            if (g is Ash)
+            {
+                tmp.Add(new Ash(g.X, g.Y));
+            }
+            else if (g is Human)
+            {
+                tmp.Add(new Human(g.id, g.X, g.Y));
+            }
+            else if (g is Zombie)
+            {
+                Zombie k = g as Zombie;
+                tmp.Add(new Zombie(k.id, k.X, k.Y, k.nextX, k.nextY));
+            }
+        }
+        return new Board(tmp) { _zombieCount = this._zombieCount, _humanCount = this._humanCount, score = this.score };
+    }
+
     public Board(IEnumerable<GameObject> gameObjects)
     {
 
@@ -284,6 +304,75 @@ public class Board
 public class GameManager
 {
     public int gameScore = 0;
+    public Ash currentPlayer;
+    public (int, Point) GameTree(Board board, int depth)
+    {
+        if (board._humanCount == 0)
+        {
+            return (-999999, null);
+        }
+        if (depth == 5)
+        {
+            //int bonus = board._humanCount  - board._zombieCount ;
+            int bonus = 0;
+            foreach (GameObject h in board._gameObjects.Where(g => g.type == GameObjectType.HUMAN))
+            {
+                var cz = h.GetClosestZombie(board);
+                if (cz != null)
+                {
+                    bonus += (int)Math.Sqrt((h.X - cz.X) * (h.X - cz.X) + (h.Y - cz.Y) * (h.Y - cz.Y));
+                }
+                else
+                {
+                    bonus += 999999;
+                }
+            }
+            return (bonus, null);
+        }
+        else
+        {
+            List<Point> dest = AshNextMove(board, 4).ToList();
+            List<(Point, Board)> nextMoves = new List<(Point, Board)>();
+            foreach (Point p in dest)
+            {
+                Board copy = board.DeepCopy();
+                Board tmpBoard = Simulate(copy, p.X, p.Y);
+                if (tmpBoard._humanCount == 0)
+                {
+                    return (-999999, null);
+                }
+                int ns;
+                Point pt;
+                (ns, pt) = GameTree(tmpBoard, depth + 1);
+                copy.score += ns;
+                nextMoves.Add((p, copy));
+            }
+            var next = nextMoves.OrderByDescending(b => b.Item2.score).FirstOrDefault();
+            return (next.Item2.score, new Point() { X = next.Item1.X, Y = next.Item1.Y });
+        }
+
+    }
+
+    public Point NextMove(Board board)
+    {
+        if (board._humanCount == 1)
+        {
+            Human theOne = board._gameObjects.Where(g => g.type == GameObjectType.HUMAN).FirstOrDefault() as Human;
+            return new Point() { X = theOne.X, Y = theOne.Y };
+        }
+        int ns;
+        Point pt;
+        (ns, pt) = GameTree(board, 0);
+
+        if (pt == null)
+        {
+            Human theOne = currentPlayer.GetClosestHumanNotAsh(board) as Human;
+            return new Point() { X = theOne.X, Y = theOne.Y };
+        }
+
+        return pt;
+    }
+
 
     public int Fibonnacci(int n)
     {
@@ -321,12 +410,12 @@ public class GameManager
         return 0;
     }
 
-    public IEnumerable<Point> AshNextMove(Board board)
+    public IEnumerable<Point> AshNextMove(Board board, int availableOptions)
     {
-        List<Point> points = board._gameObjects.Where(g => g.type != GameObjectType.ASH).Select(a => new Point() { X = a.X, Y = a.Y }).ToList();
-
+        //List<Point> points = board._gameObjects.Where(g => g.type != GameObjectType.ASH).Select(a => new Point() { X = a.X, Y = a.Y }).ToList();
+        List<Point> points = board._gameObjects.Select(a => new Point() { X = a.X, Y = a.Y }).ToList();
         KMeans km = new KMeans(points);
-        List<Point> centroids =  km.getCentroids(clusterNumber: 2).ToList();
+        List<Point> centroids = km.getCentroids(clusterNumber: availableOptions).ToList();
 
         return centroids;
     }
@@ -345,7 +434,7 @@ public class GameManager
         //Ash moves towards his target.
         Ash ash = board._gameObjects.Where(g => g.type == GameObjectType.ASH).Cast<Ash>().FirstOrDefault();
         ash.Move(board, PlayerTargrtX, PlayerTargetY, 1000);
-        Console.Error.WriteLine($"Ash:{ash.X} {ash.Y}");
+        //Console.Error.WriteLine($"Ash:{ash.X} {ash.Y}");
         //Any zombie within a 2000 unit range around Ash is destroyed.
         int killedZombies = ash.Attack(board);
         int addedScore = ComputeKillScore(board, killedZombies);
@@ -354,7 +443,7 @@ public class GameManager
         {
             z.Attack(board);
         }
-        board.score = addedScore;
+        board.score += addedScore;
         return board;
     }
 }
@@ -373,7 +462,9 @@ public class Game
             int x = int.Parse(inputs[0]);
             int y = int.Parse(inputs[1]);
             int humanCount = int.Parse(Console.ReadLine());
+
             Ash player = new Ash(x, y);
+            gm.currentPlayer = player;
             board.AddGameObject(player);
             for (int i = 0; i < humanCount; i++)
             {
@@ -394,20 +485,8 @@ public class Game
                 int zombieYNext = int.Parse(inputs[4]);
                 board.AddGameObject(new Zombie(zombieId, zombieX, zombieY, zombieXNext, zombieYNext));
             }
-
-            // Write an action using Console.WriteLine()
-            // To debug: Console.Error.WriteLine("Debug messages...");
-            List<Point> dest =  gm.AshNextMove(board).ToList();
-
-            List<Human> humans = board._gameObjects.Where(g => g.type == GameObjectType.HUMAN).Cast<Human>().ToList<Human>();
-            Board tmpBoard = gm.Simulate(board, dest[0].X, dest[0].Y);
-            gm.gameScore += tmpBoard.score;
-
-
-
-
-            Console.WriteLine($"{dest[0].X} {dest[0].Y} {gm.gameScore}"); // Your destination coordinates
-
+            Point pt = gm.NextMove(board);
+            Console.WriteLine($"{pt.X} {pt.Y}"); // Your destination coordinates
         }
     }
 }
